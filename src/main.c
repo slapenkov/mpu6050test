@@ -3,14 +3,29 @@
 // Copyright (c) 2014 Liviu Ionescu.
 //
 
-// ----------------------------------------------------------------------------
+/*
+ * Some useful links
+ * https://vasilisks.wordpress.com/2016/08/05/%D0%BD%D0%B0%D1%81%D1%82%D1%80%D0%BE%D0%B9%D0%BA%D0%B0-eclipse-%D0%BF%D0%BE%D0%B4-stm32/
+ * https://mcuoneclipse.com/2016/10/17/tutorial-using-single-wire-output-swo-with-arm-cortex-m-and-eclipse/
+ * https://community.particle.io/t/tutorial-using-eclipse-st-link-v2-openocd-to-debug/10042
+ * https://github.com/Harinadha/STM32_MPU6050lib
+ * http://letanphuc.net/2014/06/stm32-mpu6050-dma-i2c/
+ * http://forum.easyelectronics.ru/viewtopic.php?f=35&t=15587
+ * */
 
+// ----------------------------------------------------------------------------
 #include <stdio.h>
 #include <stdlib.h>
 #include "diag/Trace.h"
 
 #include "Timer.h"
 #include "BlinkLed.h"
+#include "MPU6050.h"
+#include "HAL_MPU6050.h"
+
+#include "stm32f10x_usart.h"
+#include "stm32f10x_gpio.h"
+#include "stm32f10x_dma.h"
 
 // ----------------------------------------------------------------------------
 //
@@ -55,42 +70,128 @@
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 #pragma GCC diagnostic ignored "-Wreturn-type"
 
-int
-main(int argc, char* argv[])
-{
-  // Send a greeting to the trace device (skipped on Release).
-  trace_puts("Hello ARM World!");
+int16_t AccelGyro[6] = { 0 };
+char buffer[20] = { 0 };
 
-  // At this stage the system clock should have already been configured
-  // at high speed.
-  trace_printf("System clock: %u Hz\n", SystemCoreClock);
+//prototypes
+void SetupUSART(void);
+void SetupDMA(void);
+void USART1_Send(char chr);
+void USART1_Send_String(char* str);
 
-  timer_start();
+int main(int argc, char* argv[]) {
+	// Send a greeting to the trace device (skipped on Release).
+	trace_puts("Hello ARM World!");
 
-  blink_led_init();
-  
-  uint32_t seconds = 0;
-  MPU_I2C_ClockToggling();
-  MPU6050_I2C_Init();
-//  MPU6050_Initialize();
+	// At this stage the system clock should have already been configured
+	// at high speed.
+	trace_printf("System clock: %u Hz\n", SystemCoreClock);
 
-  // Infinite loop
-  while (1)
-    {
-      blink_led_on();
-      timer_sleep(seconds == 0 ? TIMER_FREQUENCY_HZ : BLINK_ON_TICKS);
+	timer_start();
 
-      blink_led_off();
-      timer_sleep(BLINK_OFF_TICKS);
+	blink_led_init();
 
-      ++seconds;
+	uint32_t seconds = 0;
+	MPU_I2C_ClockToggling();
+	MPU6050_I2C_Init();
 
-      // Count seconds on the trace device.
-      trace_printf("Second %u\n", seconds);
-    }
-  // Infinite loop, never return.
+	SetupUSART();
+	SetupDMA();
+
+	MPU6050_Initialize();
+
+	// Infinite loop
+	while (1) {
+		blink_led_on();
+		//timer_sleep(seconds == 0 ? TIMER_FREQUENCY_HZ : BLINK_ON_TICKS);
+
+		//blink_led_off();
+		//timer_sleep(BLINK_OFF_TICKS);
+
+		++seconds;
+
+		MPU6050_GetRawAccelGyro(AccelGyro);
+
+		// Count seconds on the trace device.
+		//trace_printf("Second %u\n", seconds);
+
+		//trace through USART
+		USART1_Send_String("Test\n");
+
+		trace_printf("Some data %i:%i:%i-%i:%i:%i\n", AccelGyro[0],
+				AccelGyro[1], AccelGyro[2], AccelGyro[3], AccelGyro[4],
+				AccelGyro[5]);
+		blink_led_off();
+		timer_sleep(50);
+	}
+	// Infinite loop, never return.
 }
 
 #pragma GCC diagnostic pop
+
+//setup usart
+void SetupUSART() {
+	GPIO_InitTypeDef GPIO_InitStruct;
+	USART_InitTypeDef USART_InitStruct;
+	//set clock
+	RCC_APB2PeriphClockCmd(
+			(RCC_APB2Periph_USART1 | RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO),
+			ENABLE);
+	//Init pin PA9 - USART1_Tx
+	GPIO_InitStruct.GPIO_Pin = GPIO_Pin_9; //select pin PA9
+	GPIO_InitStruct.GPIO_Speed = GPIO_Speed_50MHz; //set max speed
+	GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AF_PP; //Alternate func, set Push-Pull
+	GPIO_Init(GPIOA, &GPIO_InitStruct); //Set GPIOА props
+
+	//Set pin PA10 - USART1_Rx
+	GPIO_InitStruct.GPIO_Pin = GPIO_Pin_10; //Select PA10
+	GPIO_InitStruct.GPIO_Mode = GPIO_Mode_IN_FLOATING; //Input floating
+	GPIO_Init(GPIOA, &GPIO_InitStruct); //Store in GPIOА props
+
+	//Инициализация USART1
+	USART_InitStruct.USART_BaudRate = 9600; //Set speed 9600 baud
+	USART_InitStruct.USART_WordLength = USART_WordLength_8b; //Length 8 bits
+	USART_InitStruct.USART_StopBits = USART_StopBits_1; //1 stop-bit
+	USART_InitStruct.USART_Parity = USART_Parity_No; //No parity
+	USART_InitStruct.USART_HardwareFlowControl = USART_HardwareFlowControl_None; //No flow control
+	USART_InitStruct.USART_Mode = USART_Mode_Rx | USART_Mode_Tx; //On transmitter and receiver of USART1
+	USART_Init(USART1, &USART_InitStruct); //Store USART1 props
+
+	USART_Cmd(USART1, ENABLE); //On USART1
+}
+
+//setup dma
+void SetupDMA() {
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+	DMA_InitTypeDef DMA_InitStruct;
+	DMA_StructInit(&DMA_InitStruct);
+	DMA_InitStruct.DMA_DIR = DMA_DIR_PeripheralDST;
+	DMA_InitStruct.DMA_PeripheralBaseAddr = (uint32_t) &(USART2->DR);
+	DMA_InitStruct.DMA_MemoryBaseAddr = (uint32_t) AccelGyro;
+	DMA_InitStruct.DMA_BufferSize = 12;
+	DMA_InitStruct.DMA_MemoryInc = DMA_MemoryInc_Enable;
+	DMA_InitStruct.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+	DMA_InitStruct.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+	DMA_InitStruct.DMA_Mode = DMA_Mode_Normal;
+	DMA_Init(DMA1_Channel6, &DMA_InitStruct);
+
+	USART_DMACmd(USART2, USART_DMAReq_Tx, ENABLE);
+	DMA_Cmd(DMA1_Channel6, ENABLE);
+
+	DMA_ITConfig(DMA1_Channel6, DMA_IT_TC, ENABLE);
+	NVIC_EnableIRQ(DMA1_Channel6_IRQn);
+}
+
+void USART1_Send(char chr) {
+	while (!(USART1->SR & USART_SR_TC))
+		;
+	USART1->DR = chr;
+}
+
+void USART1_Send_String(char* str) {
+	int i = 0;
+	while (str[i])
+		USART1_Send(str[i++]);
+}
 
 // ----------------------------------------------------------------------------

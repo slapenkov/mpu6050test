@@ -319,10 +319,10 @@ void MPU_I2C_ClockToggling()
 
 
     /* Configure SCL GPIO as output */
-    RCC_APB1PeriphClockCmd(MPU6050_I2C_RCC_Port, ENABLE);
+    RCC_APB2PeriphClockCmd(MPU6050_I2C_RCC_Port, ENABLE);
 
    GPIO_InitStructure.GPIO_Pin = MPU6050_I2C_SCL_Pin;
-   GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+   GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 
    GPIO_Init(MPU6050_I2C_Port, &GPIO_InitStructure);
@@ -375,7 +375,8 @@ void MPU6050_I2C_Init()
     I2C_InitStructure.I2C_OwnAddress1 = MPU6050_DEFAULT_ADDRESS; // MPU6050 7-bit adress = 0x68, 8-bit adress = 0xD0;
     I2C_InitStructure.I2C_Ack = I2C_Ack_Enable;
     I2C_InitStructure.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
-    I2C_InitStructure.I2C_ClockSpeed = MPU6050_I2C_Speed;
+    //I2C_InitStructure.I2C_ClockSpeed = MPU6050_I2C_Speed;
+    I2C_InitStructure.I2C_ClockSpeed = 150000;
 
     /* Apply I2C configuration after enabling it */
     I2C_Init(MPU6050_I2C, &I2C_InitStructure);
