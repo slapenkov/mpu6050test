@@ -71,21 +71,51 @@
 #pragma GCC diagnostic ignored "-Wreturn-type"
 
 int16_t AccelGyro[6] = { 0 };
-char buffer[20] = { 0 };
+
+/*typedef struct MpuData{
+ int16_t accelX;
+ int16_t accelY;
+ int16_t accelZ;
+ int16_t gyroX;
+ int16_t gyroY;
+ int16_t gyroZ;
+ } mpuData;
+
+ typedef union MpuBuffer{
+ mpuData mpuData;
+ int16_t accelGyro[6];
+ } mpuBuffer;*/
+
+union MpuPacket {
+	struct mpuStruct {
+		uint8_t header[4];
+		int16_t accelGyro[6];
+		uint8_t tail[1];
+
+	} mpuPack;
+	uint8_t buffer[17];
+} packet;
 
 //prototypes
 void SetupUSART(void);
 void SetupDMA(void);
 void USART1_Send(char chr);
 void USART1_Send_String(char* str);
+void USART1_Send_Buffer(uint8_t* buffer, uint8_t len);
 
 int main(int argc, char* argv[]) {
 	// Send a greeting to the trace device (skipped on Release).
-	trace_puts("Hello ARM World!");
+	//trace_puts("Hello ARM World!");
 
 	// At this stage the system clock should have already been configured
 	// at high speed.
-	trace_printf("System clock: %u Hz\n", SystemCoreClock);
+	//trace_printf("System clock: %u Hz\n", SystemCoreClock);
+
+	packet.mpuPack.header[0] = '$';
+	packet.mpuPack.header[1] = 'M';
+	packet.mpuPack.header[2] = 'P';
+	packet.mpuPack.header[3] = 'U';
+	packet.mpuPack.tail[0] = '#';
 
 	timer_start();
 
@@ -110,17 +140,19 @@ int main(int argc, char* argv[]) {
 
 		++seconds;
 
-		MPU6050_GetRawAccelGyro(AccelGyro);
+		MPU6050_GetRawAccelGyro(packet.mpuPack.accelGyro);
 
 		// Count seconds on the trace device.
 		//trace_printf("Second %u\n", seconds);
 
 		//trace through USART
-		USART1_Send_String("Test\n");
+		USART1_Send_String("Packet: ");
+		USART1_Send_Buffer(packet.buffer, 17);
+		USART1_Send_String("\r\n");
 
-		trace_printf("Some data %i:%i:%i-%i:%i:%i\n", AccelGyro[0],
-				AccelGyro[1], AccelGyro[2], AccelGyro[3], AccelGyro[4],
-				AccelGyro[5]);
+		/*trace_printf("Some data %i:%i:%i-%i:%i:%i\n", AccelGyro[0],
+		 AccelGyro[1], AccelGyro[2], AccelGyro[3], AccelGyro[4],
+		 AccelGyro[5]);*/
 		blink_led_off();
 		timer_sleep(50);
 	}
@@ -192,6 +224,13 @@ void USART1_Send_String(char* str) {
 	int i = 0;
 	while (str[i])
 		USART1_Send(str[i++]);
+}
+
+//send buffer
+void USART1_Send_Buffer(uint8_t* buffer, uint8_t len) {
+	int i = 0;
+	for (i = 0; i < len; i++)
+		USART1_Send(buffer[i++]);
 }
 
 // ----------------------------------------------------------------------------
